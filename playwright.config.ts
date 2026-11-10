@@ -40,6 +40,8 @@ export default defineConfig({
     video: 'retain-on-failure',
     serviceWorkers: 'block',     // the app caches itself offline; tests should always load fresh files
     locale: 'sl-SI',
+    // SLOWMO=500 waits 500 ms between actions, so you can follow a headed run with your eyes
+    launchOptions: { slowMo: Number(process.env.SLOWMO ?? 0) },
   },
 
   projects: [
