@@ -1,4 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
  * Two ways to run:
@@ -11,6 +13,15 @@ const PORT = 4173;
 const liveUrl = process.env.BASE_URL;
 const appDir = process.env.APP_DIR ?? './app';
 const isCI = !!process.env.CI;
+
+// Fail fast with a clear message instead of a 30 s webServer timeout (the server would only return 404s).
+if (!liveUrl && !existsSync(join(appDir, 'index.html'))) {
+  throw new Error(
+    `App not found in "${appDir}". Clone it first:\n` +
+    `  git clone https://github.com/petrovcicklemen/igrisce app\n` +
+    `or set APP_DIR to the app folder, or BASE_URL to test the live site.`,
+  );
+}
 
 export default defineConfig({
   testDir: './tests',
