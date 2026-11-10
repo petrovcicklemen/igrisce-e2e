@@ -10,7 +10,7 @@ import { join } from 'node:path';
  *    no local server is started.
  */
 const PORT = 4173;
-const liveUrl = process.env.BASE_URL;
+const liveUrl = process.env.BASE_URL || undefined; // CI may pass an empty string, treat it as "not set"
 const appDir = process.env.APP_DIR ?? './app';
 const isCI = !!process.env.CI;
 
