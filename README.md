@@ -39,6 +39,6 @@ BASE_URL=https://petrovcicklemen.github.io/igrisce/ npx playwright test
 
 ## CI
 
-The workflow runs on every push and pull request, every night, and on demand (**Actions → E2E tests → Run workflow**).
+The workflow runs on every push and pull request, every Saturday at 05:00 (Ljubljana time), and on demand (**Actions → E2E tests → Run workflow**).
 Each run checks out this repo and the app repo, serves the app with `http-server`, and runs the
 `desktop-chrome` and `tablet` projects in parallel. HTML reports and JUnit XML are attached to every run as artifacts.
