@@ -16,6 +16,10 @@ on:
         type: choice
         options: [local-copy, live-site]
         default: local-copy
+      test_notification:
+        description: 'Send a Telegram message even if nothing changed'
+        type: boolean
+        default: false
 
 # Cancel an older run of the same branch if a newer one starts
 concurrency:
@@ -78,3 +82,58 @@ jobs:
           name: junit-${{ matrix.project }}
           path: results/junit.xml
           retention-days: 14
+
+  # Runs after both test jobs, sends a Telegram message on failure or recovery
+  notify:
+    name: Telegram notification
+    needs: test
+    if: ${{ always() && needs.test.result != 'cancelled' && needs.test.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read            # to look up the previous run's result
+    env:
+      # Secrets come in through env, never inline in the script, and are masked in logs.
+      # Pull requests from forks do not receive secrets, so they are empty there and we skip.
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      RESULT: ${{ needs.test.result }}
+      FORCE: ${{ github.event.inputs.test_notification }}
+    steps:
+      - name: Decide whether to notify
+        id: decide
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram secrets not available, skipping."; echo "send=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Result of the previous completed run of this workflow on the same branch
+          PREV=$(gh run list -R "$GITHUB_REPOSITORY" --workflow e2e.yml --branch "$GITHUB_REF_NAME" \
+                 --status completed --limit 1 --json conclusion -q '.[0].conclusion' || true)
+          echo "This run: $RESULT, previous run: ${PREV:-none}"
+          if [ "$RESULT" = "failure" ]; then
+            echo "send=true" >> "$GITHUB_OUTPUT"; echo "icon=❌" >> "$GITHUB_OUTPUT"; echo "text=E2E tests FAILED" >> "$GITHUB_OUTPUT"
+          elif [ "$RESULT" = "success" ] && [ "$PREV" = "failure" ]; then
+            echo "send=true" >> "$GITHUB_OUTPUT"; echo "icon=✅" >> "$GITHUB_OUTPUT"; echo "text=E2E tests are green again" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE" = "true" ]; then
+            echo "send=true" >> "$GITHUB_OUTPUT"; echo "icon=🔔" >> "$GITHUB_OUTPUT"; echo "text=Test notification, result: $RESULT" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nothing to report."; echo "send=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Send Telegram message
+        if: ${{ steps.decide.outputs.send == 'true' }}
+        env:
+          ICON: ${{ steps.decide.outputs.icon }}
+          TEXT: ${{ steps.decide.outputs.text }}
+        run: |
+          MESSAGE="$ICON $TEXT
+          Repo: $GITHUB_REPOSITORY ($GITHUB_REF_NAME, ${GITHUB_SHA::7})
+          Trigger: $GITHUB_EVENT_NAME
+          $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          curl -sS --fail-with-body -o /dev/null \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MESSAGE}" \
+            --data-urlencode "disable_web_page_preview=true"
+          echo "Message sent."
